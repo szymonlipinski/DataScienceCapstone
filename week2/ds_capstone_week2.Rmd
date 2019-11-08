@@ -1,0 +1,250 @@
+---
+title: "Data Science Specialization Capstone Project Week 2"
+author: "Szymon Lipiński"
+date: "10/28/2019"
+output: html_document
+---
+
+
+# Data Science Specialization Capstone Project Week 2
+
+## Load Needed Libraries
+
+```{r message=FALSE, warning=FALSE}
+library(knitr)
+library(tidyverse)
+library(tm)
+library(dplyr)
+library(wordcloud)
+library(tidytext)
+```
+
+
+## Downloading and Loading Data
+
+The data set file has been downloaded from https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip.
+Then it has been saved to `../data/Coursera-SwiftKey.zip` and unpacked. The zip file contains just one directory `final`, so all the English files are stored in `../data/final/en_US`.
+
+
+```{r cache=TRUE}
+basicDir <- "../data/final/en_US/"
+twitterFilePath <- paste(basicDir, "en_US.twitter.txt", sep = "")
+blogsFilePath <- paste(basicDir, "en_US.blogs.txt", sep = "")
+newsFilePath <- paste(basicDir, "en_US.news.txt", sep = "")
+```
+
+Reading the files content to variables:
+
+```{r readingFiles, cache=TRUE}
+twitterData <- readLines(twitterFilePath, encoding="UTF-8", skipNul = TRUE)
+blogsData <- readLines(blogsFilePath, encoding="UTF-8", skipNul = TRUE)
+newsData <- readLines(newsFilePath, encoding="UTF-8", skipNul = TRUE)
+```
+
+## Basic Data Summary
+
+Let's find some basic information about the data:
+
+```{r buildData, message=FALSE, warning=FALSE, cache=TRUE}
+data <- list(twitterData, blogsData, newsData)
+words <- sapply(data, function(x){lengths(strsplit(x, " "))})
+twitterWords = lengths(strsplit(twitterData, " "))
+blogsWords = lengths(strsplit(blogsData, " "))
+newsWords = lengths(strsplit(newsData, " "))
+```
+
+```{r printingKable, message=FALSE, warning=FALSE, cache=TRUE, include=FALSE}
+rm(twitterData)
+rm(newsData)
+rm(blogsData)
+gc()
+```
+
+
+```{r printingKable, message=FALSE, warning=FALSE, cache=TRUE}
+
+kable(data.frame(
+  DataSources = c("Twitter", "Blogs", "News"),
+  RowCount = format(sapply(data, function(x){length(x)}), big.mark = ","),
+  DataSize = sapply(data, function(x){format(object.size(x),"MiB")})
+))
+
+kable(data.frame(
+  DataSources = c("Twitter", "Blogs", "News"),
+  MinCharactersInEntry = format(sapply(data, function(x){min(nchar(x))}), big.mark = ","),
+  AverageCharactersInEntry = format(sapply(data, function(x){mean(nchar(x))}), big.mark = ","),
+  MaxCharactersInEntry = format(sapply(data, function(x){max(nchar(x))}), big.mark = ",")
+))
+
+kable(data.frame(
+  DataSources = c("Twitter", "Blogs", "News"),
+  MinWordsInEntry = format(sapply(words, function(x){min(x)}), big.mark = ","),
+  AverageWordsInEntry = format(sapply(words, function(x){mean(x)}), big.mark = ","),
+  MaxWordsInEntry = format(sapply(words, function(x){max(x)}), big.mark = ",")
+))
+```
+
+```{r printingKable, message=FALSE, warning=FALSE, cache=TRUE, include=FALSE}
+rm(words)
+rm(twitterWords)
+rm(blogsWords)
+rm(newsWords)
+gc()
+
+```
+
+## Data Cleaning
+
+Because of the size of the data, there will chosen a small subset to create the corpus used for further analysis.
+
+```{r indices, cache=TRUE}
+
+data <- unlist(data)
+sampleSize <- 10/100 # sample size in percents
+
+indices <- function(){sample(seq_len(length(data)), length(data)*sampleSize)}
+
+```
+
+```{r sampleData, message=FALSE, warning=FALSE, cache=TRUE}
+
+indices <- indices()
+sampleData <- data[indices]
+
+
+```
+
+```{r corpus, cache=TRUE}
+
+corpus <- Corpus(VectorSource(unlist(sampleData, use.names = FALSE)),
+                 readerControl = list(reader = readPlain, language = "en"))
+
+# Remove non-ASCII characters
+corpus <- Corpus(VectorSource(sapply(corpus, function(row) iconv(row, "latin1", "ASCII", sub = ""))))
+
+```
+
+Let's make the corpus and clean the data a little bit:
+
+```{r cleaningCorpus, message=FALSE, warning=FALSE, cache=TRUE}
+
+corpus <- corpus %>%
+  tm_map(removePunctuation) %>% # Remove punctuation mar
+  tm_map(removeNumbers) %>% # Remove number
+  tm_map(stripWhitespace) %>% # Strip extra whitespace from a text document. Multiple whitespace characters are collapsed to asingle blank.
+  tm_map(content_transformer(tolower)) %>% # make lower case
+  tm_map(PlainTextDocument) # Create plain text documents.
+
+corpusNoStopWords <- corpus %>%
+  tm_map(removeWords, stopwords("english"))
+
+corpusDF <- data.frame(unlist(as.list(as.list(corpus))), stringsAsFactors = FALSE)
+
+corpusDFNoSW <- data.frame(unlist(as.list(as.list(corpusNoStopWords))), stringsAsFactors = FALSE)
+
+colnames(corpusDF) <- c("text")
+colnames(corpusDFNoSW) <- c("text")
+
+corpusDF <- corpusDF %>% dplyr::filter(!(text == " "))
+```
+
+
+The whole data size is `r  format(object.size(data),"MiB")`. 
+
+With the sample size of `r sampleSize*100`%, the size of the plain text corpus with all the words is: `r format(object.size(corpusDF),"MiB")` and without the stop words is: `r format(object.size(corpusDFNoSW),"MiB")`
+
+The code is prepared for using smaller sample, however, using a huge one is quite fine for my computer.
+
+
+## N-grams
+
+```{r ngrams, message=FALSE, cache=TRUE}
+
+buildNGrams <- function(data, n) {
+  startTime <- Sys.time()
+  result <- data %>% 
+    unnest_tokens(ngram, text, token = "ngrams", n = n) %>%
+    dplyr::count(ngram, sort = TRUE)
+  elapsedTime <- Sys.time() - startTime
+  list(result, elapsedTime)
+}
+```
+
+
+```{r unigrams, cache=TRUE}
+monogramsOutput <- buildNGrams(corpusDF, 1)
+monograms <- monogramsOutput[[1]]
+monogramsTime <- monogramsOutput[[2]]
+monograms
+```
+
+
+```{r bigrams, cache=TRUE}
+bigramsOutput <- buildNGrams(corpusDF, 2)
+bigrams <- bigramsOutput[[1]]
+bigramsTime <- bigramsOutput[[2]]
+```
+
+```{r trigrams, cache=TRUE}
+trigramsOutput <- buildNGrams(corpusDF, 3)
+trigrams <- trigramsOutput[[1]]
+trigramsTime <- trigramsOutput[[2]]
+```
+
+```{r quadgrams, cache=TRUE}
+quadgramsOutput <- buildNGrams(corpusDF, 4)
+quadgrams <- quadgramsOutput[[1]]
+quadgramsTime <- quadgramsOutput[[2]]
+```
+
+Calculated `r format(nrow(monograms), big.mark = ",")` monograms in `r round(as.numeric(monogramsTime), 0)`s.
+
+Calculated `r format(nrow(bigrams), big.mark = ",")` bigrams in `r round(as.numeric(bigramsTime), 0)`s.
+
+Calculated `r format(nrow(trigrams), big.mark = ",")` trigrams in `r round(as.numeric(trigramsTime), 0)`s.
+
+Calculated `r format(nrow(quadgrams), big.mark = ",")` quadgrams in `r round(as.numeric(quadgramsTime), 0)`s.
+
+```{r}
+nTopNGrams <- 20
+
+pl1 <- ggplot(data = monograms[1:nTopNGrams,], aes(x = reorder(ngram, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(x = "mono-grams", y = "Count", title = "Count for the most 20 mono-grams") +
+  coord_flip()
+
+pl2 <- ggplot(data = bigrams[1:nTopNGrams,], aes(x = reorder(ngram, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(x = "bi-grams", y = "Count", title = "Count for the most 20 bi-grams") +
+  coord_flip()
+
+pl3 <- ggplot(data = trigrams[1:nTopNGrams,], aes(x = reorder(ngram, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(x = "tri-grams", y = "Count", title = "Count for the most 20 tri-grams") +
+  coord_flip()
+
+pl4 <- ggplot(data = quadgrams[1:nTopNGrams,], aes(x = reorder(ngram, n), y = n)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  labs(x = "quad-grams", y = "Count", title = "Count for the most 20 quad-grams") +
+  coord_flip()
+
+pl1
+pl2
+pl3
+pl4
+```
+
+
+## Further Steps
+
+### The Prediction Algorithm
+
+My algorithm will be using the n-gram model built in the previous step. For each provided word, or a couple of words, I will be able to search the n-gram model to predict the words with the highest probability, in this case, with the highest count from the model.
+
+It is possible to use bigrams for this, but also trigrams, or quadgrams. I will need to see what's the best way to do it.
+
+### The Shiny App
+
+The UI will be built using the Shiny library. It will allow users to enter a phrase, then it will suggest the next most likely word.
+
+

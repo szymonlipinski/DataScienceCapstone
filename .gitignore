@@ -1,0 +1,8 @@
+*.csv
+*.tar.gz
+.Rhistory
+rsconnect
+*_cache
+data
+original_data
+pg

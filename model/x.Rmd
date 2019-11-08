@@ -1,0 +1,157 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+library(tidyverse)
+library(tm)
+library(dplyr)
+library(wordcloud)
+```
+
+
+```{r loadData, cache=TRUE}
+# load the model
+#bigrams <- read_csv("bigrams.csv")
+trigrams <- read_csv("trigrams.csv")
+#quadgrams <- read_csv("quadgrams.csv")
+```
+
+```{r warning=FALSE, cache=TRUE}
+cleanPhrase <- function(phrase) {
+  sampleData <- list(phrase)
+  corpus <- VCorpus(VectorSource(unlist(sampleData, use.names = FALSE)),
+                   readerControl = list(reader = readPlain, language = "en"))
+  
+  # Remove non-ASCII characters
+  corpus <- VCorpus(VectorSource(
+    sapply(corpus, function(row) iconv(row, "latin1", "ASCII", sub = ""))))
+  
+  corpus <- corpus %>%
+    tm_map(removePunctuation) %>%
+    tm_map(removeNumbers) %>%
+    tm_map(content_transformer(tolower)) %>%
+    tm_map(stripWhitespace) %>%
+    tm_map(PlainTextDocument)
+  
+  corpusDF <- data.frame(unlist(as.list(as.list(corpus))), stringsAsFactors = FALSE)
+  
+  colnames(corpusDF) <- c("text")
+  corpusDF[[1]][[1]]
+}
+```
+
+
+```{r cache=FALSE}
+
+searchForNextTerm <- function(parts, searchLength, df) {
+
+  if (length(parts) < searchLength - 1) {
+    return(NULL)
+  } 
+  
+  searchPhrase = paste(tail(parts, searchLength - 1), collapse = " ")
+
+  result <- df %>%
+    filter(phrase == searchPhrase)
+
+  result[1:10, "nextTerm"]
+}
+
+findNextTerm <- function(phrase) {
+  
+  parts <- phrase %>%
+    cleanPhrase() %>%
+    strsplit(" ") %>%
+    unlist()
+
+  #res <- searchForNextTerm(parts, 4, quadgrams)
+  #if (!is.null(res)) {
+    #print("Found in quadgrams")
+    #return(res)
+  #}
+  
+  res <- searchForNextTerm(parts, 3, trigrams)
+  if (!is.null(res)) { 
+    print("Found in trigrams")
+    return(res)
+  }
+  
+  #res <- searchForNextTerm(parts, 2, bigrams)
+  #if (!is.null(res)) {
+    #print("Found in bigrams")
+    #return(as.character(res))
+  #}
+  
+  return(NULL)
+}
+```
+
+
+```{r cache=TRUE}
+test <- c(
+  "The guy in front of me just bought a pound of bacon, a bouquet, and a case of",
+  "You're the reason why I smile everyday. Can you follow me please? It would mean the",
+  "Hey sunshine, can you follow me and make me the",
+  "Very early observations on the Bills game: Offense still struggling but the",
+  "Go on a romantic date at the",
+  "Well I'm pretty sure my granny has some old bagpipes in her garage I'll dust them off and be on my",
+  "Ohhhhh #PointBreak is on tomorrow. Love that film and haven't seen it in quite some",
+  "After the ice bucket challenge Louis will push his long wet hair out of his eyes with his little",
+  "Be grateful for the good times and keep the faith during the",
+  "If this isn't the cutest thing you've ever seen, then you must be"
+)
+
+answers = c(
+  c("soda", "pretzels", "beer", "cheese")
+)
+```
+
+```{r cache=FALSE}
+res <- sapply(test, function(x){findNextTerm(x)})
+```
+
+
+```{r}
+x <- res
+
+for(n in 1:10) {
+  a <- x[n]
+  print(a)
+}
+```
+
+```{r}
+quiz3 <- c(
+  "When you breathe, I want to be the air for you. I'll be there for you, I'd live and I'd",
+  "Guy at my table's wife got up to go to the bathroom and I asked about dessert and he started telling me about his",
+  "I'd give anything to see arctic monkeys this",
+  "Talking to your mom has the same effect as a hug and helps reduce your",
+  "When you were in Holland you were like 1 inch away from me but you hadn't time to take a",
+  "I'd just like all of these questions answered, a presentation of evidence, and a jury to settle the",
+  "I can't deal with unsymetrical things. I can't even hold an uneven number of bags of groceries in each",
+  "Every inch of you is perfect from the bottom to the",
+  "I’m thankful my childhood was filled with imagination and bruises from playing",
+  "I like how the same people are in almost all of Adam Sandler's"
+)
+```
+
+```{r cache=FALSE}
+res <- sapply(test, function(x){findNextTerm(x)})
+```
+
+```{r}
+x <- res
+
+for(n in 1:10) {
+  a <- x[n]
+  print(a)
+}
+```
+
+
+
+

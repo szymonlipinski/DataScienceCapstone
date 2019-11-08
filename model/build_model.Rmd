@@ -1,0 +1,169 @@
+---
+title: "Build Prediction Model"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+sampleSize <- 0.001/100 # sample size in percents
+set.seed(1234)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tm)
+library(stringr)
+library(dplyr) 
+library(tidytext)
+```
+
+```{r readData, warning=FALSE, cache=TRUE}
+
+basicDir <- "../data/final/en_US/"
+twitterFilePath <- paste(basicDir, "en_US.twitter.txt", sep = "")
+blogsFilePath <- paste(basicDir, "en_US.blogs.txt", sep = "")
+newsFilePath <- paste(basicDir, "en_US.news.txt", sep = "")
+twitterData <- readLines(twitterFilePath, encoding="UTF-8", skipNul = TRUE)
+blogsData <- readLines(blogsFilePath, encoding="UTF-8", skipNul = TRUE)
+newsData <- readLines(newsFilePath, encoding="UTF-8", skipNul = TRUE)
+
+```
+
+```{r data, cache=TRUE}
+data <- c(twitterData, blogsData, newsData)
+
+# make sample
+#indices <- function(){sample(seq_len(length(data)), length(data)*sampleSize)}
+#indices <- indices()
+#data <- data[indices]
+
+rm(twitterData)
+rm(newsData)
+rm(blogsData)
+gc()
+
+```
+
+```{r cleanData}
+# CLEAN DATA
+
+# make lowercase
+data <- tolower(data)
+
+# replace the non-alphanumeric characters with spaces
+# but only when at the beginning/end of the word
+data <- gsub("\\s['.,:;!?(){}<>]+(\\w)", " \\1", data)
+data <- gsub("(\\w)['.,:;!?(){}<>]+\\s", "\\1 ", data)
+
+# remove all words made of pure numbers and special characters
+data <- gsub("\\s+[0-9'.,:;!?(){}<>]+\\s+", " ", data)
+data <- gsub("^[0-9'.,:;!?(){}<>]+\\s+", " ", data)
+data <- gsub("\\s+[0-9'.,:;!?(){}<>]+$", " ", data)
+
+# replace spaces at the beginning of the line
+data <- gsub("^\\s+", "", data)
+
+# replace spaces at the end of the line
+data <- gsub("\\s+$", "", data)
+
+# replace all multiple spaces to one
+data <- gsub("\\s+", " ", data)
+
+# convert the `i` to the capital one `I`
+# when it's a separate word
+data <- gsub("(^|\\s)i($|\\s)", "\\1I\\2", data)
+
+df <- tibble(text = data)
+
+write.csv(df, "converted.data.csv", row.names = FALSE)
+
+rm(data)
+gc()
+```
+
+```{r}
+format.number <- function(n) {
+  format(n, big.mark = ",")
+}
+```
+
+
+```{r}
+# Gets the last word from the passed text.
+# Returns a list:
+#   [1] - string with words except for the last one
+#   [2] - the last word
+splitText <- function(ngram) {
+  parts <- unlist(strsplit(ngram, " "))
+  size <- length(parts)
+  list(
+    paste(parts[1:size - 1], collapse = " "),
+    parts[size]
+  )
+}
+
+# Returns a string with all the words except for the last one
+getText <- function(ngram) {
+  splitText(ngram)[[1]]
+}
+
+# Returns the last word
+getNextTerm <- function(ngram) {
+  splitText(ngram)[[2]]
+}
+
+
+# Builds the ngrams
+# data - data frame with column "text"
+# n - the number of N-grams to make
+# fileName - name of the file to store the data frame to
+#
+# Returns data frame with:
+#  phrase, nextTerm, count
+buildNGrams <- function(data, n, fileName) {
+  
+  # colNames <- sapply(1:(n - 1), function(x){paste("word", x, sep = "")})
+  colNames <- sapply(1:n, function(x){paste("word", x, sep = "")})
+  
+  result <- data %>%
+    unnest_tokens(ngram, text, token = "ngrams", n = n, collapse = FALSE, to_lower = FALSE) %>%
+    # Count the ngrams
+    dplyr::count(ngram, sort = TRUE) %>%
+    # Filter the ngrams to leave only the most common ones
+    # filter(n > 1) %>%
+    # Make separate columns for the words
+    # separate(ngram, c(colNames, "nextTerm")) %>%
+    separate(ngram, colNames, sep = " ") %>%
+    drop_na()
+    # Join the first n-1 columns into the phrase one
+    # unite("phrase", colNames, sep = " ")
+  
+  write.csv(result, fileName, row.names = FALSE)
+  rm(result)
+}
+```
+
+
+```{r monograms, cache=TRUE}
+#buildNGrams(corpusDF, 1, "monograms.csv")
+gc()
+```
+
+```{r buildBigrams, cache=FALSE}
+#buildNGrams(df, 2, "bigrams.csv")
+#gc()
+```
+
+```{r buildTrigrams, cache=FALSE}
+buildNGrams(df, 3, "trigrams.csv")
+gc()
+```
+
+```{r buildQuadgrams, cache=FALSE}
+#buildNGrams(df, 4, "quadgrams.csv")
+#gc()
+```
+
+

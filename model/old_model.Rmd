@@ -1,0 +1,140 @@
+---
+title: "Build Prediction Model"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+sampleSize <- 1/100 # sample size in percents
+set.seed(1234)
+```
+
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tm)
+library(dplyr)
+library(wordcloud)
+library(tidytext)
+```
+
+```{r warning=FALSE}
+
+basicDir <- "../data/final/en_US/"
+twitterFilePath <- paste(basicDir, "en_US.twitter.txt", sep = "")
+blogsFilePath <- paste(basicDir, "en_US.blogs.txt", sep = "")
+newsFilePath <- paste(basicDir, "en_US.news.txt", sep = "")
+twitterData <- readLines(twitterFilePath, encoding="UTF-8", skipNul = TRUE)
+blogsData <- readLines(blogsFilePath, encoding="UTF-8", skipNul = TRUE)
+newsData <- readLines(newsFilePath, encoding="UTF-8", skipNul = TRUE)
+
+```
+
+```{r}
+data <- list(twitterData, blogsData, newsData)
+rm(twitterData)
+rm(newsData)
+rm(blogsData)
+gc()
+```
+
+```{r}
+
+data <- unlist(data)
+
+
+indices <- function(){sample(seq_len(length(data)), length(data)*sampleSize)}
+indices <- indices()
+sampleData <- data[indices]
+```
+
+```{r}
+format.number <- function(n) {
+  format(n, big.mark = ",")
+}
+```
+
+Original data size: `r format.number(length(data))`. Sample size is `r sampleSize*100`%, which gives `r format.number(length(sampleData))` rows.
+
+
+
+```{r}
+
+corpus <- VCorpus(VectorSource(unlist(sampleData, use.names = FALSE)),
+                 readerControl = list(reader = readPlain, language = "en"))
+
+# Remove non-ASCII characters
+corpus <- VCorpus(VectorSource(sapply(corpus, function(row) iconv(row, "latin1", "ASCII", sub = ""))))
+
+corpus <- corpus %>%
+  tm_map(removePunctuation) %>%
+  tm_map(removeNumbers) %>%
+  tm_map(content_transformer(tolower)) %>%
+  #tm_map(removeWords, stopwords("english")) %>%
+  tm_map(stripWhitespace) %>%
+  tm_map(PlainTextDocument)
+
+corpusDF <- data.frame(unlist(as.list(as.list(corpus))), stringsAsFactors = FALSE)
+
+colnames(corpusDF) <- c("text")
+
+corpusDF <- corpusDF %>% dplyr::filter(!(text == " "))
+```
+
+```{r}
+
+splitText <- function(ngram) {
+  parts <- unlist(strsplit(ngram, " "))
+  size <- length(parts)
+  list(
+    paste(parts[1:size - 1], collapse = " "),
+    parts[size]
+  )
+}
+
+getText <- function(ngram) {
+  splitText(ngram)[[1]]
+}
+
+getNextTerm <- function(ngram) {
+  splitText(ngram)[[2]]
+}
+
+
+buildNGrams <- function(data, n, fileName) {
+  
+  colNames <- sapply(1:(n - 1), function(x){paste("word", x, sep = "")})
+  
+  result <- data %>%
+    unnest_tokens(ngram, text, token = "ngrams", n = n) %>%
+    dplyr::count(ngram, sort = TRUE) %>%
+    separate(ngram, c(colNames, "nextTerm")) %>%
+    unite("phrase", colNames, sep = " ")
+  write.csv(result, fileName, row.names = FALSE)
+  rm(result)
+}
+```
+
+
+```{r monograms, cache=TRUE}
+#buildNGrams(corpusDF, 1, "monograms.csv")
+#gc()
+```
+
+```{r bigrams, cache=FALSE}
+buildNGrams(corpusDF, 2, "bigrams.csv")
+gc()
+```
+
+```{r trigrams, cache=FALSE}
+buildNGrams(corpusDF, 3, "trigrams.csv")
+gc()
+```
+
+```{r quadgrams, cache=FALSE}
+buildNGrams(corpusDF, 4, "quadgrams.csv")
+gc()
+```
+
+
